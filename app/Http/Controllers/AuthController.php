@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use App\Models\User;
 
 class AuthController extends Controller
 {
@@ -29,18 +30,13 @@ class AuthController extends Controller
 
     public function login(Request $request)
     {
-        $user = DB::table('users')->where('email', $request->email)->first();
+        $user = User::where('email', $request->email)->first();
 
         if (!$user || !Hash::check($request->password, $user->password)) {
             return response()->json(['message' => 'Invalid credentials'], 401);
         }
 
-        $token = Str::random(60);
-
-        DB::table('users')->where('email', $request->email)->update([
-            'remember_token' => $token,
-            'updated_at' => now(),
-        ]);
+        $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
             'message' => 'Login successful',

@@ -26,34 +26,41 @@ Route::get('/products/{id}', function ($id) {
     return response()->json($product);
 });
 
-Route::post('/products', function (Request $request) {
-    $id = DB::table('products')->insertGetId([
-        'name' => $request->name,
-        'description' => $request->description,
-        'price' => $request->price,
-        'stock' => $request->stock,
-        'image' => $request->image ?? 'https://via.placeholder.com/300',
-        'created_at' => now(),
-        'updated_at' => now(),
-    ]);
-    return response()->json(['success' => true, 'id' => $id]);
-});
+// Only logged-in users can reach these, and each one checks for admin
+Route::middleware('auth:sanctum')->group(function () {
 
-Route::put('/products/{id}', function (Request $request, $id) {
-    DB::table('products')->where('id', $id)->update([
-        'name' => $request->name,
-        'description' => $request->description,
-        'price' => $request->price,
-        'stock' => $request->stock,
-        'image' => $request->image ?? 'https://via.placeholder.com/300',
-        'updated_at' => now(),
-    ]);
-    return response()->json(['success' => true]);
-});
+    Route::post('/products', function (Request $request) {
+        abort_if(! $request->user()->is_admin, 403);
+        $id = DB::table('products')->insertGetId([
+            'name' => $request->name,
+            'description' => $request->description,
+            'price' => $request->price,
+            'stock' => $request->stock,
+            'image' => $request->image ?? 'https://via.placeholder.com/300',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        return response()->json(['success' => true, 'id' => $id]);
+    });
 
-Route::delete('/products/{id}', function ($id) {
-    DB::table('products')->where('id', $id)->delete();
-    return response()->json(['success' => true]);
+    Route::put('/products/{id}', function (Request $request, $id) {
+        abort_if(! $request->user()->is_admin, 403);
+        DB::table('products')->where('id', $id)->update([
+            'name' => $request->name,
+            'description' => $request->description,
+            'price' => $request->price,
+            'stock' => $request->stock,
+            'image' => $request->image ?? 'https://via.placeholder.com/300',
+            'updated_at' => now(),
+        ]);
+        return response()->json(['success' => true]);
+    });
+
+    Route::delete('/products/{id}', function (Request $request, $id) {
+        abort_if(! $request->user()->is_admin, 403);
+        DB::table('products')->where('id', $id)->delete();
+        return response()->json(['success' => true]);
+    });
 });
 
 Route::post('/orders', function (Request $request) {
