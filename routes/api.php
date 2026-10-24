@@ -64,20 +64,62 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 Route::post('/orders', function (Request $request) {
-    $orderId = DB::table('orders')->insertGetId([
-        'customer_name' => $request->customer_name,
-        'customer_email' => $request->customer_email,
-        'customer_address' => $request->customer_address,
-        'customer_phone' => $request->customer_phone,
-        'items' => json_encode($request->items),
-        'total' => $request->total,
-        'status' => 'pending',
-        'created_at' => now(),
-        'updated_at' => now(),
+    // 1. Check the data is valid (the server-side validation)
+    $data = $request->validate([
+        'customer_name' => 'required|string|max:255',
+        'customer_email' => 'required|email|max:255',
+        'customer_address' => 'required|string|max:500',
+        'customer_phone' => 'required|string|max:30',
+        'items' => 'required|array|min:1',
+        'items.*.id' => 'required|integer',
+        'items.*.quantity' => 'required|integer|min:1',
     ]);
-    return response()->json(['success' => true, 'order_id' => $orderId]);
-});
 
+    // 2. Do everything as one block: if anything fails, nothing is saved
+    return DB::transaction(function () use ($data) {
+        $subtotal = 0;
+        $orderItems = [];
+
+        foreach ($data['items'] as $item) {
+            $product = DB::table('products')->where('id', $item['id'])->lockForUpdate()->first();
+
+            if (! $product) {
+                abort(422, 'A product in your cart no longer exists.');
+            }
+            if ($product->stock < $item['quantity']) {
+                abort(422, "Not enough stock for {$product->name}.");
+            }
+
+            // 3. Update the stock
+            DB::table('products')->where('id', $product->id)->decrement('stock', $item['quantity']);
+
+            $subtotal += $product->price * $item['quantity'];
+            $orderItems[] = [
+                'id' => $product->id,
+                'name' => $product->name,
+                'price' => $product->price,
+                'quantity' => $item['quantity'],
+            ];
+        }
+
+        // 4. The server calculates the total itself, not the browser
+        $shipping = $subtotal >= 50 ? 0 : 5.99;
+
+        $orderId = DB::table('orders')->insertGetId([
+            'customer_name' => $data['customer_name'],
+            'customer_email' => $data['customer_email'],
+            'customer_address' => $data['customer_address'],
+            'customer_phone' => $data['customer_phone'],
+            'items' => json_encode($orderItems),
+            'total' => $subtotal + $shipping,
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return response()->json(['success' => true, 'order_id' => $orderId]);
+    });
+});
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/logout', [AuthController::class, 'logout']);
